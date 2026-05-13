@@ -145,6 +145,7 @@
 
         <!-- 播放图标 -->
         <ImageView
+            android:id="@+id/iv_pause"
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:src="@android:drawable/ic_media_play"
