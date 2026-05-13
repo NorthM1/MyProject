@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:background="@color/bg_light_gray"
+    >
+
+    <LinearLayout
+        android:id="@+id/plan_top"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="@dimen/padding_16"
+        android:paddingVertical="5dp"
+        android:background="@color/white"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/title_training"
+            android:textSize="@dimen/text_size_title_25"
+            android:textStyle="bold"
+            android:paddingStart="@dimen/padding_10"
+            android:textColor="@color/text_primary" />
+
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/action_new_create"
+            android:textSize="@dimen/text_size_button_14"
+            android:textColor="@color/white"
+            android:backgroundTint="@color/success_green"
+            android:paddingStart="@dimen/padding_16"
+            android:paddingEnd="@dimen/padding_16"
+            android:stateListAnimator="@null" />
+    </LinearLayout>
+
+    <!-- 标签栏 -->
+    <HorizontalScrollView
+        android:id="@+id/horizontalScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/horizontal_scroll_height"
+        android:background="@color/white"
+        android:scrollbars="none"
+        android:paddingHorizontal="@dimen/padding_16"
+        android:paddingVertical="5dp"
+        app:layout_constraintTop_toBottomOf="@+id/plan_top"
+        tools:layout_editor_absoluteX="16dp">
+
+        <RadioGroup
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- 全部（选中） -->
+            <RadioButton
+                android:id="@+id/rabtn_all"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/radio_height_32"
+                android:layout_marginEnd="@dimen/margin_8"
+                android:background="@drawable/plan_status_selector"
+                android:button="@null"
+                android:checked="true"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/radio_padding_horizontal_16"
+                android:text="@string/plan_status_all"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_size_button_14" />
+
+            <!-- 进行中 -->
+            <RadioButton
+                android:id="@+id/rabtn_doing"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/radio_height_32"
+                android:layout_marginEnd="@dimen/margin_8"
+                android:background="@drawable/plan_status_selector"
+                android:button="@null"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/radio_padding_horizontal_16"
+                android:text="@string/plan_status_doing"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_size_button_14" />
+
+            <!-- 待开始 -->
+            <RadioButton
+                android:id="@+id/rabtn_todo"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/radio_height_32"
+                android:layout_marginEnd="@dimen/margin_8"
+                android:button="@null"
+                android:background="@drawable/plan_status_selector"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/radio_padding_horizontal_16"
+                android:text="@string/plan_status_todo"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_size_button_14" />
+
+            <!-- 已完成 -->
+            <RadioButton
+                android:id="@+id/rabtn_done"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/radio_height_32"
+                android:layout_marginEnd="@dimen/margin_8"
+                android:button="@null"
+                android:background="@drawable/plan_status_selector"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/radio_padding_horizontal_16"
+                android:text="@string/plan_status_done"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_size_button_14" />
+
+            <!-- 收藏 -->
+            <RadioButton
+                android:id="@+id/rabtn_favorite"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/radio_height_32"
+                android:button="@null"
+                android:gravity="center"
+                android:background="@drawable/plan_status_selector"
+                android:paddingHorizontal="@dimen/radio_padding_horizontal_16"
+                android:text="@string/plan_status_favorite"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/text_size_button_14" />
+
+        </RadioGroup>
+    </HorizontalScrollView>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:padding="@dimen/padding_10"
+        android:focusable="false"
+        android:focusableInTouchMode="false"
+        android:descendantFocusability="blocksDescendants"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/horizontalScrollView" />
+
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+

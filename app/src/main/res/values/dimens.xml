@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Paddings & margins -->
+    <dimen name="padding_16">16dp</dimen>
+    <dimen name="padding_10">10dp</dimen>
+    <dimen name="margin_8">8dp</dimen>
+
+    <!-- Heights -->
+    <dimen name="horizontal_scroll_height">48dp</dimen>
+    <dimen name="radio_height_32">32dp</dimen>
+
+    <!-- Radio/label paddings -->
+    <dimen name="radio_padding_horizontal_16">16dp</dimen>
+
+    <!-- Text sizes -->
+    <dimen name="text_size_title_25">25sp</dimen>
+    <dimen name="text_size_button_14">14sp</dimen>
+</resources>
+

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 添加新训练方案卡片 -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="@dimen/padding_10"
+    android:layout_marginTop="@dimen/padding_10"
+    android:background="@drawable/white_rounded_rectengle">
+
+    <!-- "+" 图标 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="+"
+        android:textSize="28sp"
+        android:textColor="#CCCCCC"
+        android:layout_marginBottom="8dp" />
+
+    <!-- 主标题：添加新训练方案 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="添加新训练方案"
+        android:textSize="14sp"
+        android:textColor="#999999"
+        android:layout_marginBottom="4dp" />
+
+    <!-- 副标题：医生配置或系统推荐 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="医生配置或系统推荐"
+        android:textSize="12sp"
+        android:textColor="#BBBBBB" />
+
+</LinearLayout>

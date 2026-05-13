@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/padding_10"
+    android:background="@drawable/white_rounded_rectengle"
+    android:padding="@dimen/padding_10">
+
+    <ProgressBar
+        android:id="@+id/pb_action"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:max="100"
+        android:progress="70"
+        android:progressBackgroundTint="#00000000"
+        android:progressTint="#E8F5EE"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+
+    <!-- 序号背景与文字 -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cv_step_number"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        app:cardBackgroundColor="#E8F5EE"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/tv_step_number"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:textColor="#2BAE66"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            tools:text="1" />
+    </androidx.cardview.widget.CardView>
+
+    <!-- 动作标题 -->
+    <TextView
+        android:id="@+id/tv_action_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="12dp"
+        android:textColor="#1A1A2E"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@+id/tv_action_desc"
+        app:layout_constraintEnd_toStartOf="@+id/iv_arrow"
+        app:layout_constraintStart_toEndOf="@+id/cv_step_number"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_chainStyle="packed"
+        tools:text="膝关节屈伸训练" />
+
+    <!-- 动作描述/副标题 -->
+    <TextView
+        android:id="@+id/tv_action_desc"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="#999999"
+        android:textSize="12sp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@+id/tv_action_title"
+        app:layout_constraintStart_toStartOf="@+id/tv_action_title"
+        app:layout_constraintTop_toBottomOf="@+id/tv_action_title"
+        tools:text="3组 × 15次 · 每组约 10 分钟 · 还剩 1 组" />
+
+
+    <!-- 右侧指示箭头 -->
+    <!-- 注意：这里的 src/background 请替换为你项目中真实的小箭头 drawable -->
+    <ImageView
+        android:id="@+id/iv_arrow"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:tint="#CCCCCC"
+        tools:ignore="UseAppTint"
+        tools:src="@android:drawable/ic_media_next" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

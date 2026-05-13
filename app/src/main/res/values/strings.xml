@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MyProject</string>
+    <string name="hello_world">Hello world!</string>
+
+    <!-- Bottom navigation titles -->
+    <string name="title_home">Home</string>
+    <string name="title_action">Action</string>
+    <string name="title_plan">Plan</string>
+    <string name="title_my">My</string>
+
+    <!-- Fragment plan texts -->
+    <string name="title_training">训练方案</string>
+    <string name="action_new_create">+ 新建</string>
+
+    <!-- Plan status labels -->
+    <string name="plan_status_all">全部</string>
+    <string name="plan_status_doing">进行中</string>
+    <string name="plan_status_todo">待开始</string>
+    <string name="plan_status_done">已完成</string>
+    <string name="plan_status_favorite">收藏</string>
+</resources>
