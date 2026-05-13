@@ -16,7 +16,7 @@
         <activity android:name=".ui.activity.PlanDetailActivity"/>
 
         <activity
-            android:name=".ui.activity.MainActivity"
+            android:name=".AnalysisActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

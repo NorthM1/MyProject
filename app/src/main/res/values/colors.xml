@@ -34,6 +34,8 @@
     <color name="badge_gray_bg">#F0F0F0</color>
     <color name="badge_gray_text">#999999</color>
 
+    <color name="red">#FFFF0000</color>
+
     <!-- 分割线 -->
     <color name="divider">#F0F0F0</color>
 </resources>
