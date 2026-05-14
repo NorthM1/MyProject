@@ -190,23 +190,8 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
         rv=findViewById(R.id.rv)
 
         segmentAdapter = SegmentAdapter(segmentItems) { item ->
-            // 点击跳转到该段起始位置
-            val posMs = item.doctorStartMs
-            sb.progress = posMs.toInt()
-
-            videoViewDoctor.seekTo(posMs.toInt())
-            videoViewDoctor.start()
-
-            videoViewPatient.seekTo(item.patientStartMs.toInt())
-            videoViewPatient.start()
-
-            playbackSeekPosMs = posMs
-            playbackStartMs = System.currentTimeMillis()
-
-            updateOverlayFromCache(posMs, overlayDoctor, doctorFrameCache)
-            updateOverlayFromCache(item.patientStartMs, overlayPatient, patientFrameCache)
-
-            startSeekBarUpdate()
+            sb.progress = item.doctorStartMs.toInt()
+            seekTo(item.doctorStartMs)  // 直接复用 SeekBar 的跳转逻辑
         }
         rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
         rv.adapter = segmentAdapter
@@ -229,20 +214,7 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar) {
-                val posMs = seekBar.progress.toLong()
-                videoViewDoctor.seekTo(posMs.toInt())
-                videoViewPatient.seekTo(posMs.toInt())
-                videoViewDoctor.start()
-                videoViewPatient.start()
-
-                playbackSeekPosMs = posMs
-                playbackStartMs = System.currentTimeMillis()
-
-                // ✅ 直接用视频时间查缓存
-                updateOverlayFromCache(posMs, overlayDoctor, doctorFrameCache)
-                updateOverlayFromCache(posMs, overlayPatient, patientFrameCache)
-
-                startSeekBarUpdate()
+                seekTo(seekBar.progress.toLong())
             }
         })
 
@@ -298,6 +270,22 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
         }
     }
 
+    // 新增方法，SeekBar 和段列表共用
+    private fun seekTo(posMs: Long) {
+        videoViewDoctor.seekTo(posMs.toInt())
+        videoViewPatient.seekTo(posMs.toInt())
+        videoViewDoctor.start()
+        videoViewPatient.start()
+
+        playbackSeekPosMs = posMs
+        playbackStartMs = System.currentTimeMillis()
+
+        updateOverlayFromCache(posMs, overlayDoctor, doctorFrameCache)
+        updateOverlayFromCache(posMs, overlayPatient, patientFrameCache)
+
+        startSeekBarUpdate()
+    }
+
     private fun checkBothLoaded() {
         btnStart.isEnabled = doctorUri != null && patientUri != null
     }
@@ -311,7 +299,7 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
                 sb.progress = currentMs.toInt()
 
                 // ✅ 骨骼提前2帧显示，补偿渲染延迟（1帧=100ms，2帧=200ms）
-                val skeletonMs = (currentMs + FRAME_INTERVAL_MS * 10).coerceAtMost(sb.max.toLong())
+                val skeletonMs = (currentMs + FRAME_INTERVAL_MS * 3).coerceAtMost(sb.max.toLong())
                 updateOverlayFromCache(skeletonMs, overlayDoctor, doctorFrameCache)
                 updateOverlayFromCache(skeletonMs, overlayPatient, patientFrameCache)
 
@@ -539,34 +527,34 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
     fun extractAngleVector(frame: List<NormalizedLandmark>): FloatArray {
         val joints = listOf(
             // ── 手臂 ──────────────────────────────────────────────────────────────────
-//            Triple(11, 13, 15), // 左肘角：左肩-左肘-左腕（手臂弯曲程度）
-//            Triple(12, 14, 16), // 右肘角：右肩-右肘-右腕（手臂弯曲程度）
+            Triple(11, 13, 15), // 左肘角：左肩-左肘-左腕（手臂弯曲程度）
+            Triple(12, 14, 16), // 右肘角：右肩-右肘-右腕（手臂弯曲程度）
 //            Triple(13, 15, 17), // 左腕角：左肘-左腕-左小指（手腕弯曲）
 //            Triple(14, 16, 18), // 右腕角：右肘-右腕-右小指（手腕弯曲）
 //            Triple(13, 15, 19), // 左腕角：左肘-左腕-左食指（手腕弯曲）
 //            Triple(14, 16, 20), // 右腕角：右肘-右腕-右食指（手腕弯曲）
 
             // ── 肩部 ──────────────────────────────────────────────────────────────────
-//            Triple(23, 11, 13), // 左肩纵向角：左髋-左肩-左肘（手臂前后抬起幅度）
-//            Triple(24, 12, 14), // 右肩纵向角：右髋-右肩-右肘（手臂前后抬起幅度）
-//            Triple(12, 11, 13), // 左肩横向角：右肩-左肩-左肘（手臂左右展开幅度）
-//            Triple(11, 12, 14), // 右肩横向角：左肩-右肩-右肘（手臂左右展开幅度）
+            Triple(23, 11, 13), // 左肩纵向角：左髋-左肩-左肘（手臂前后抬起幅度）
+            Triple(24, 12, 14), // 右肩纵向角：右髋-右肩-右肘（手臂前后抬起幅度）
+            Triple(12, 11, 13), // 左肩横向角：右肩-左肩-左肘（手臂左右展开幅度）
+            Triple(11, 12, 14), // 右肩横向角：左肩-右肩-右肘（手臂左右展开幅度）
 
             // ── 躯干 ──────────────────────────────────────────────────────────────────
-//            Triple(11, 23, 24), // 左躯干角：左肩-左髋-右髋（上身左侧倾斜）
-//            Triple(12, 24, 23), // 右躯干角：右肩-右髋-左髋（上身右侧倾斜）
-//            Triple(11, 12, 24), // 肩髋角右：左肩-右肩-右髋（躯干扭转）
-//            Triple(12, 11, 23), // 肩髋角左：右肩-左肩-左髋（躯干扭转）
+            Triple(11, 23, 24), // 左躯干角：左肩-左髋-右髋（上身左侧倾斜）
+            Triple(12, 24, 23), // 右躯干角：右肩-右髋-左髋（上身右侧倾斜）
+            Triple(11, 12, 24), // 肩髋角右：左肩-右肩-右髋（躯干扭转）
+            Triple(12, 11, 23), // 肩髋角左：右肩-左肩-左髋（躯干扭转）
 
 //            // ── 颈部/头部 ─────────────────────────────────────────────────────────────
 //            Triple(11, 12,  0), // 颈部角：左肩-右肩-鼻子（头部前后倾）
 //            Triple(12, 11,  0), // 颈部角：右肩-左肩-鼻子（头部左右偏）
 
             // ── 下半身（如需要可开启）────────────────────────────────────────────────
-            Triple(23, 25, 27), // 左膝角：左髋-左膝-左踝（膝盖弯曲程度）
-            Triple(24, 26, 28), // 右膝角：右髋-右膝-右踝（膝盖弯曲程度）
-            Triple(11, 23, 25), // 左髋角：左肩-左髋-左膝（髋部弯曲程度）
-            Triple(12, 24, 26), // 右髋角：右肩-右髋-右膝（髋部弯曲程度）
+//            Triple(23, 25, 27), // 左膝角：左髋-左膝-左踝（膝盖弯曲程度）
+//            Triple(24, 26, 28), // 右膝角：右髋-右膝-右踝（膝盖弯曲程度）
+//            Triple(11, 23, 25), // 左髋角：左肩-左髋-左膝（髋部弯曲程度）
+//            Triple(12, 24, 26), // 右髋角：右肩-右髋-右膝（髋部弯曲程度）
 //             Triple(25, 27, 31), // 左踝角：左膝-左踝-左脚尖（踝关节角度）
 //             Triple(26, 28, 32), // 右踝角：右膝-右踝-右脚尖（踝关节角度）
         )
