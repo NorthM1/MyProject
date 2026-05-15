@@ -23,7 +23,7 @@
         <activity android:name=".ui.activity.MainActivity"/>
 
         <activity
-            android:name=".DoctorExtractionActivity"
+            android:name=".AnalysisActivityOnlyPatient"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

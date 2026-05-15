@@ -35,8 +35,8 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.core.RunningMode
+import org.json.JSONArray
 import java.util.TreeMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -99,8 +99,13 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     // ── 文件选择器 ────────────────────────────────────────────────────────────
     private var pendingPicker: ((Uri) -> Unit)? = null
 
-    val doctorPoseList = mutableListOf<List<NormalizedLandmark>>()
-    val patientPoseList = mutableListOf<List<NormalizedLandmark>>()
+    // 支持代码控制的关节点三元组切换 (0:默认全部, 1:上半身, 2:下半身等)
+    var activeJointGroup = 0
+
+    data class LandmarkPt(val x: Float, val y: Float)
+
+    val doctorPoseList = mutableListOf<List<LandmarkPt>>()
+    val patientPoseList = mutableListOf<List<LandmarkPt>>()
 
     // 帧时间戳 → 骨骼结果缓存（Key单位：毫秒）
     // ✅ 成员变量区替换原来的 doctorFrameCache/patientFrameCache
@@ -141,7 +146,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     // ─────────────────────────────────────────────────────────────────────────
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.analysis)
+        setContentView(R.layout.analysis_only_patient)
 
         videoViewDoctor = findViewById(R.id.video_view_doctor)
         videoViewPatient = findViewById(R.id.video_view_patient)
@@ -246,7 +251,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         }
 
         btnStart.setOnClickListener {
-            doctorUri ?: return@setOnClickListener
+            // 不再强制要求 doctorUri，因为doctor数据从JSON加载
             patientUri ?: return@setOnClickListener
             btnStart.isEnabled = false
             btnStart.visibility = View.GONE
@@ -256,15 +261,8 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             rl.visibility = View.GONE
             topAppBar.visibility = View.GONE
 
-            // 两路同时启动分析
-//            backgroundExecutor = Executors.newSingleThreadScheduledExecutor()
-            backgroundExecutor = Executors.newScheduledThreadPool(2)
-            runDetectionOnVideo(
-                uri = doctorUri!!,
-                videoView = videoViewDoctor,
-                overlay = overlayDoctor,
-                isDoctor = true
-            )
+            // 开始加载患者视频进行分析
+            backgroundExecutor = Executors.newScheduledThreadPool(1)
             runDetectionOnVideo(
                 uri = patientUri!!,
                 videoView = videoViewPatient,
@@ -291,7 +289,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     }
 
     private fun checkBothLoaded() {
-        btnStart.isEnabled = doctorUri != null && patientUri != null
+        btnStart.isEnabled = patientUri != null
     }
 
     private fun startSeekBarUpdate() {
@@ -440,8 +438,9 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                 helper.detectVideoFrame(bitmap, timestampUs)?.let { result ->
                     val landmarks = result.results[0].landmarks()
                     if (landmarks.isNotEmpty()) {
-                        if (isDoctor) doctorPoseList.add(landmarks[0])
-                        else patientPoseList.add(landmarks[0])
+                        val pts = landmarks[0].map { LandmarkPt(it.x(), it.y()) }
+                        if (isDoctor) doctorPoseList.add(pts)
+                        else patientPoseList.add(pts)
                     }
 
                     // ✅ 用视频相对时间作为key（系统时间 - 分析开始时间）
@@ -503,11 +502,10 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                     addListener(object : Player.Listener {
                         override fun onPlaybackStateChanged(state: Int) {
                             if (state == Player.STATE_ENDED) {
-                                endedCount++
-                                if (endedCount == 2) {  // 两路都结束
+                                if (!isDoctor) { // 当患者视频结束时
+                                    loadDoctorDataFromJson()
                                     val score = calculateScoreDTW(doctorPoseList, patientPoseList)
                                     tvScore.text="$score"
-
                                     Log.d("mmmmm", "" + score)
                                 }
                                 imageReader.close()
@@ -533,10 +531,31 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         }
     }
 
+    // --- 新增：从 JSON 加载标准动作数据 ---
+    private fun loadDoctorDataFromJson() {
+        try {
+            val jsonString = assets.open("拉伸动作.json").bufferedReader().use { it.readText() }
+            val jsonArray = JSONArray(jsonString)
+            doctorPoseList.clear()
+            for (i in 0 until jsonArray.length()) {
+                val frameObj = jsonArray.getJSONObject(i)
+                val pointsArray = frameObj.getJSONArray("points")
+                val landmarks = mutableListOf<LandmarkPt>()
+                for (j in 0 until pointsArray.length()) {
+                    val pt = pointsArray.getJSONArray(j)
+                    landmarks.add(LandmarkPt(pt.getDouble(0).toFloat(), pt.getDouble(1).toFloat()))
+                }
+                doctorPoseList.add(landmarks)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     /**
      * 把一帧 landmarks 提取为关节角度向量
      */
-    fun extractAngleVector(frame: List<NormalizedLandmark>): FloatArray {
+    fun extractAngleVector(frame: List<LandmarkPt>): FloatArray {
         val joints = listOf(
             // ── 手臂 ──────────────────────────────────────────────────────────────────
             Triple(11, 13, 15), // 左肘角：左肩-左肘-左腕（手臂弯曲程度）
@@ -734,8 +753,8 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     val complexityWeights = mutableListOf<Float>()      //  各段复杂度权重
 
     fun calculateScoreDTW(
-        doctorList: List<List<NormalizedLandmark>>,
-        patientList: List<List<NormalizedLandmark>>
+        doctorList: List<List<LandmarkPt>>,
+        patientList: List<List<LandmarkPt>>
     ): Int {
         if (doctorList.isEmpty() || patientList.isEmpty()) return 0
 
@@ -905,11 +924,11 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     }
 
     // 计算三点夹角（角度）
-    fun angle(a: NormalizedLandmark, b: NormalizedLandmark, c: NormalizedLandmark): Float {
-        val v1x = a.x() - b.x()
-        val v1y = a.y() - b.y()
-        val v2x = c.x() - b.x()
-        val v2y = c.y() - b.y()
+    fun angle(a: LandmarkPt, b: LandmarkPt, c: LandmarkPt): Float {
+        val v1x = a.x - b.x
+        val v1y = a.y - b.y
+        val v2x = c.x - b.x
+        val v2y = c.y - b.y
         val dot = v1x * v2x + v1y * v2y
         val mag = sqrt((v1x * v1x + v1y * v1y) * (v2x * v2x + v2y * v2y))
         return Math.toDegrees(acos((dot / mag).coerceIn(-1f, 1f).toDouble())).toFloat()
