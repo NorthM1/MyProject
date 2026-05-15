@@ -1,6 +1,7 @@
 package com.example.myproject.ui.activity
 
 import BaseActivity
+import android.content.Intent
 import android.util.Log
 import android.view.LayoutInflater
 import androidx.lifecycle.lifecycleScope
@@ -15,7 +16,15 @@ class PlanDetailActivity:BaseActivity<ActivityPlanDetailBinding>() {
 
     private lateinit var planRepository: PlanRepository
     private var planId: String? = null
-    private val actionAdapter by lazy { ActionAdapter() }
+    private val actionAdapter by lazy {
+        ActionAdapter { item ->
+            // 点击动作后跳转到 SceneViewActivity，可传入 actionId 或其它信息
+            val intent = Intent(this, com.example.myproject.SceneViewActivity::class.java)
+            intent.putExtra("actionId", item.actionId)
+            intent.putExtra("actionTitle", item.title)
+            startActivity(intent)
+        }
+    }
 
     override fun getViewBinding(inflater: LayoutInflater): ActivityPlanDetailBinding {
         return ActivityPlanDetailBinding.inflate(inflater)

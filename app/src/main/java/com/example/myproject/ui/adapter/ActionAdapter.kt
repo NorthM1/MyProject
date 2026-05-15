@@ -8,7 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.myproject.databinding.ItemActionBinding
 import com.example.myproject.ui.model.ActionItemModel
 
-class ActionAdapter() : ListAdapter<ActionItemModel, ActionViewHolder>(object: DiffUtil.ItemCallback<ActionItemModel>(){
+class ActionAdapter(private val onItemClick: ((ActionItemModel) -> Unit)? = null) : ListAdapter<ActionItemModel, ActionViewHolder>(object: DiffUtil.ItemCallback<ActionItemModel>(){
     override fun areItemsTheSame(
         p0: ActionItemModel,
         p1: ActionItemModel
@@ -37,6 +37,7 @@ class ActionAdapter() : ListAdapter<ActionItemModel, ActionViewHolder>(object: D
     ) {
         val item = getItem(p1)
         p0.bind(item)
+        p0.itemView.setOnClickListener { onItemClick?.invoke(item) }
     }
 
     // ...existing code...

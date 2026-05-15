@@ -15,8 +15,15 @@
 
         <activity android:name=".ui.activity.PlanDetailActivity"/>
 
+        <activity android:name=".SceneViewActivity"/>
+
+        <activity android:name=".AnalysisActivity"/>
+
+<!--        <activity android:name=".DoctorExtractionActivity"/>-->
+        <activity android:name=".ui.activity.MainActivity"/>
+
         <activity
-            android:name=".AnalysisActivity"
+            android:name=".DoctorExtractionActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

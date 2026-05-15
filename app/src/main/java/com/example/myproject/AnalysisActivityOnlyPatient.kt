@@ -15,6 +15,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -32,10 +33,10 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.core.RunningMode
-import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import java.util.TreeMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -44,41 +45,8 @@ import kotlin.math.acos
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-/**
- * 子序列 DTW
- * 在 patientSeq 中找到与 doctorSeq 最匹配的一段
- * 返回：最优对齐的平均角度差 + 患者序列的起止帧索引
- */
-data class SubDTWResult(
-    val avgAngleDiff: Float,   // 平均角度差（°）
-    val patientStart: Int,     // 患者最优起始帧
-    val patientEnd: Int        // 患者最优结束帧
-)
 
-data class DTWResult(
-    val avgAngleDiff: Float,
-    val maxAngleDiff: Float,
-    val errorFrameRatio: Float,  // 超过阈值的帧占比（0~1）
-    val errorThreshold: Float    // 使用的阈值
-)
-
-// ✅ 新增数据类（放在文件顶部 SubDTWResult 旁边）
-data class FrameResult(
-    val result: PoseLandmarkerResult,
-    val width: Int,
-    val height: Int
-)
-
-data class SegmentItem(
-    val index: Int,
-    val startSec: Int,
-    val endSec: Int,
-    val score: Int,
-    val doctorStartMs: Long,
-    val patientStartMs: Long
-)
-
-class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListener {
+class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListener {
 
     // ── UI ───────────────────────────────────────────────────────────────────
     private lateinit var videoViewDoctor: VideoView
@@ -96,7 +64,7 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
     private lateinit var clScore: View
     private lateinit var llSeekbar: View
     private lateinit var rl: LinearLayout
-    private lateinit var ivPause: android.widget.ImageButton
+    private lateinit var ivPause: ImageButton
     private lateinit var rv: RecyclerView
     private lateinit var topAppBar: View
 
@@ -206,7 +174,7 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
             val nested = findViewById<NestedScrollView>(R.id.nested_scroll)
             nested?.post { nested.scrollTo(0, 0) }
         }
-        rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
+        rv.layoutManager = LinearLayoutManager(this)
         rv.adapter = segmentAdapter
 
         btnStart.isEnabled = false
@@ -546,10 +514,10 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
                                 analysisThread.quitSafely()
                                 backgroundExecutor.execute {
                                     if (isDoctor) {
-                                        if (this@AnalysisActivity::poseLandmarkerHelperDoctor.isInitialized)
+                                        if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperDoctor.isInitialized)
                                             poseLandmarkerHelperDoctor.clearPoseLandmarker()
                                     } else {
-                                        if (this@AnalysisActivity::poseLandmarkerHelperPatient.isInitialized)
+                                        if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperPatient.isInitialized)
                                             poseLandmarkerHelperPatient.clearPoseLandmarker()
                                     }
                                 }
