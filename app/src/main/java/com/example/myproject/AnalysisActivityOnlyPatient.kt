@@ -148,6 +148,18 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         super.onCreate(savedInstanceState)
         setContentView(R.layout.analysis_only_patient)
 
+        backgroundExecutor = Executors.newScheduledThreadPool(1)
+        backgroundExecutor.execute {
+            poseLandmarkerHelperPatient = PoseLandmarkerHelper(
+                context = applicationContext,
+                runningMode = RunningMode.VIDEO,
+                minPoseDetectionConfidence = 0.2f,
+                minPoseTrackingConfidence = 0.2f,
+                minPosePresenceConfidence = 0.2f,
+                currentDelegate = PoseLandmarkerHelper.DELEGATE_CPU
+            )
+        }
+
         videoViewDoctor = findViewById(R.id.video_view_doctor)
         videoViewPatient = findViewById(R.id.video_view_patient)
         overlayDoctor = findViewById(R.id.overlay_doctor)
@@ -262,7 +274,6 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             topAppBar.visibility = View.GONE
 
             // 开始加载患者视频进行分析
-            backgroundExecutor = Executors.newScheduledThreadPool(1)
             runDetectionOnVideo(
                 uri = patientUri!!,
                 videoView = videoViewPatient,
@@ -353,68 +364,57 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         overlay: OverlayView,
         isDoctor: Boolean
     ) {
-        // VideoView 负责可见画面播放
-        with(videoView) {
-            setVideoURI(uri)
-            setOnPreparedListener { it.setVolume(0f, 0f); it.start() }
-            requestFocus()
-        }
-
-        // 在后台线程初始化对应的 PoseLandmarkerHelper
+        // 获取视频分辨率在后台完成
         backgroundExecutor.execute {
-            val helper = PoseLandmarkerHelper(
-                context = applicationContext,
-                runningMode = RunningMode.VIDEO,
-                minPoseDetectionConfidence = 0.2f,
-                minPoseTrackingConfidence = 0.2f,
-                minPosePresenceConfidence = 0.2f,
-                currentDelegate = PoseLandmarkerHelper.DELEGATE_CPU
-            )
-            if (isDoctor) poseLandmarkerHelperDoctor = helper
-            else poseLandmarkerHelperPatient = helper
-        }
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(this@AnalysisActivityOnlyPatient, uri)
+            val videoWidth =
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt()
+                    ?: 640
+            val videoHeight =
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt()
+                    ?: 480
+            retriever.release()
 
-        // 获取视频分辨率
-        val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(this, uri)
-        val videoWidth =
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt()
-                ?: 640
-        val videoHeight =
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt()
-                ?: 480
-        retriever.release()
+            // 回到主线程启动视频和解码
+            runOnUiThread {
+                // VideoView 负责可见画面播放
+                with(videoView) {
+                    setVideoURI(uri)
+                    setOnPreparedListener { it.setVolume(0f, 0f); it.start() }
+                    requestFocus()
+                }
 
-        // ✅ 限制最大480p，ExoPlayer会自动缩放输出
-        val maxReaderWidth = 480
-        val readerScale = minOf(1f, maxReaderWidth.toFloat() / videoWidth)
-        val readerWidth = (videoWidth * readerScale).toInt()
-        val readerHeight = (videoHeight * readerScale).toInt()
+                // ✅ 限制最大480p，ExoPlayer会自动缩放输出
+                val maxReaderWidth = 480
+                val readerScale = minOf(1f, maxReaderWidth.toFloat() / videoWidth)
+                val readerWidth = (videoWidth * readerScale).toInt()
+                val readerHeight = (videoHeight * readerScale).toInt()
 
-        val imageReader = ImageReader.newInstance(
-            readerWidth, readerHeight, ImageFormat.YUV_420_888, 2
-        )
-        val analysisThread = HandlerThread(
-            if (isDoctor) "VideoAnalysis-Doctor" else "VideoAnalysis-Patient"
-        ).also { it.start() }
-        val analysisHandler = Handler(analysisThread.looper)
+                val imageReader = ImageReader.newInstance(
+                    readerWidth, readerHeight, ImageFormat.YUV_420_888, 2
+                )
+                val analysisThread = HandlerThread(
+                    if (isDoctor) "VideoAnalysis-Doctor" else "VideoAnalysis-Patient"
+                ).also { it.start() }
+                val analysisHandler = Handler(analysisThread.looper)
 
-        if (isDoctor) {
-            imageReaderDoctor?.close()
-            imageReaderDoctor = imageReader
-            analysisThreadDoctor?.quitSafely()
-            analysisThreadDoctor = analysisThread
-        } else {
-            imageReaderPatient?.close()
-            imageReaderPatient = imageReader
-            analysisThreadPatient?.quitSafely()
-            analysisThreadPatient = analysisThread
-        }
+                if (isDoctor) {
+                    imageReaderDoctor?.close()
+                    imageReaderDoctor = imageReader
+                    analysisThreadDoctor?.quitSafely()
+                    analysisThreadDoctor = analysisThread
+                } else {
+                    imageReaderPatient?.close()
+                    imageReaderPatient = imageReader
+                    analysisThreadPatient?.quitSafely()
+                    analysisThreadPatient = analysisThread
+                }
 
-        // 帧回调：加入时间戳降帧判断
-        imageReader.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            try {
+                // 帧回调：加入时间戳降帧判断
+                imageReader.setOnImageAvailableListener({ reader ->
+                    val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                    try {
                 val timestampUs = image.timestamp / 1000
                 val lastTs = if (isDoctor) lastFrameTsDoctor else lastFrameTsPatient
 
@@ -474,61 +474,61 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             }
         }, analysisHandler)
 
-        // ExoPlayer 解码帧 → ImageReader（仅分析用，不显示）
-        runOnUiThread {
-            // 强制软解的 MediaCodecSelector：只返回非硬件加速的解码器
-            val softwareOnlySelector =
-                MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
-                    MediaCodecUtil
-                        .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
-                        .filter { !it.hardwareAccelerated }
+                // ExoPlayer 解码帧 → ImageReader（仅分析用，不显示）
+                // 强制软解的 MediaCodecSelector：只返回非硬件加速的解码器
+                val softwareOnlySelector =
+                    MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+                        MediaCodecUtil
+                            .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
+                            .filter { !it.hardwareAccelerated }
+                    }
+
+                val renderersFactory = DefaultRenderersFactory(this@AnalysisActivityOnlyPatient).also {
+                    it.setMediaCodecSelector(softwareOnlySelector)
                 }
 
-            val renderersFactory = DefaultRenderersFactory(this).also {
-                it.setMediaCodecSelector(softwareOnlySelector)
-            }
+                val player = ExoPlayer.Builder(this@AnalysisActivityOnlyPatient, renderersFactory)
+                    .build().apply {
+                        setVideoSurface(imageReader.surface)
+                        setMediaItem(MediaItem.fromUri(uri))
+                        volume = 0f
+                        prepare()
+                        play()
 
-            val player = ExoPlayer.Builder(this, renderersFactory)
-                .build().apply {
-                    setVideoSurface(imageReader.surface)
-                    setMediaItem(MediaItem.fromUri(uri))
-                    volume = 0f
-                    prepare()
-                    play()
+                        if (isDoctor) doctorAnalysisStartMs = System.currentTimeMillis()
+                        else patientAnalysisStartMs = System.currentTimeMillis()
 
-                    if (isDoctor) doctorAnalysisStartMs = System.currentTimeMillis()
-                    else patientAnalysisStartMs = System.currentTimeMillis()
-
-                    addListener(object : Player.Listener {
-                        override fun onPlaybackStateChanged(state: Int) {
-                            if (state == Player.STATE_ENDED) {
-                                if (!isDoctor) { // 当患者视频结束时
-                                    loadDoctorDataFromJson()
-                                    val score = calculateScoreDTW(doctorPoseList, patientPoseList)
-                                    tvScore.text="$score"
-                                    Log.d("mmmmm", "" + score)
-                                }
-                                imageReader.close()
-                                analysisThread.quitSafely()
-                                backgroundExecutor.execute {
-                                    if (isDoctor) {
-                                        if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperDoctor.isInitialized)
-                                            poseLandmarkerHelperDoctor.clearPoseLandmarker()
-                                    } else {
-                                        if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperPatient.isInitialized)
-                                            poseLandmarkerHelperPatient.clearPoseLandmarker()
+                        addListener(object : Player.Listener {
+                            override fun onPlaybackStateChanged(state: Int) {
+                                if (state == Player.STATE_ENDED) {
+                                    if (!isDoctor) { // 当患者视频结束时
+                                        loadDoctorDataFromJson()
+                                        val score = calculateScoreDTW(doctorPoseList, patientPoseList)
+                                        tvScore.text="$score"
+                                        Log.d("mmmmm", "" + score)
+                                    }
+                                    imageReader.close()
+                                    analysisThread.quitSafely()
+                                    backgroundExecutor.execute {
+                                        if (isDoctor) {
+                                            if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperDoctor.isInitialized)
+                                                poseLandmarkerHelperDoctor.clearPoseLandmarker()
+                                        } else {
+                                            if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperPatient.isInitialized)
+                                                poseLandmarkerHelperPatient.clearPoseLandmarker()
+                                        }
                                     }
                                 }
                             }
-                        }
-                    })
+                        })
+                    }
+                if (isDoctor) {
+                    exoPlayerDoctor?.release(); exoPlayerDoctor = player
+                } else {
+                    exoPlayerPatient?.release(); exoPlayerPatient = player
                 }
-            if (isDoctor) {
-                exoPlayerDoctor?.release(); exoPlayerDoctor = player
-            } else {
-                exoPlayerPatient?.release(); exoPlayerPatient = player
-            }
-        }
+            } // end of runOnUiThread
+        } // end of backgroundExecutor.execute
     }
 
     // --- 新增：从 JSON 加载标准动作数据 ---
