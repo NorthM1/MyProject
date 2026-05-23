@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
+import android.view.Choreographer
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
@@ -35,7 +36,10 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.filament.gltfio.Animator
 import com.google.mediapipe.tasks.vision.core.RunningMode
+import io.github.sceneview.SceneView
+import io.github.sceneview.node.ModelNode
 import org.json.JSONArray
 import java.util.TreeMap
 import java.util.concurrent.Executors
@@ -49,9 +53,10 @@ import kotlin.math.sqrt
 class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerListener {
 
     // ── UI ───────────────────────────────────────────────────────────────────
-    private lateinit var videoViewDoctor: VideoView
+    private val BEFORE=5
+
+    private lateinit var sceneViewDoctor: SceneView
     private lateinit var videoViewPatient: VideoView
-    private lateinit var overlayDoctor: OverlayView
     private lateinit var overlayPatient: OverlayView          // 新增
     private lateinit var btnLoadDoctor: Button
     private lateinit var btnLoadPatient: Button
@@ -72,17 +77,20 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     private lateinit var segmentAdapter: SegmentAdapter
 
     // ── URI ──────────────────────────────────────────────────────────────────
-    private var doctorUri: Uri? = null
     private var patientUri: Uri? = null
 
     // ── 分析资源（各自独立）──────────────────────────────────────────────────
     private lateinit var backgroundExecutor: ScheduledExecutorService
 
-    // Doctor
-    private lateinit var poseLandmarkerHelperDoctor: PoseLandmarkerHelper
-    private var exoPlayerDoctor: ExoPlayer? = null
-    private var imageReaderDoctor: ImageReader? = null
-    private var analysisThreadDoctor: HandlerThread? = null
+    // Doctor (SceneView model)
+    private var modelNode: ModelNode? = null
+    private lateinit var animator: Animator
+    private var animDuration = 0f
+    private val aniIndex = 0
+    private var isModelPlaying = false
+    private var startOffset = 0f
+    private var playStartTime = -1L
+    private val playbackSpeed = 1.0f
 
     // Patient
     private lateinit var poseLandmarkerHelperPatient: PoseLandmarkerHelper
@@ -108,15 +116,9 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     val patientPoseList = mutableListOf<List<LandmarkPt>>()
 
     // 帧时间戳 → 骨骼结果缓存（Key单位：毫秒）
-    // ✅ 成员变量区替换原来的 doctorFrameCache/patientFrameCache
-    val doctorFrameCache = TreeMap<Long, FrameResult>()
     val patientFrameCache = TreeMap<Long, FrameResult>()
-    private var doctorFrameIndex = 0L
     private var patientFrameIndex = 0L
 
-    var endedCount = 0
-
-    private var lastFrameTsDoctor = 0L
     private var lastFrameTsPatient = 0L
 
     private var playbackStartMs = 0L
@@ -125,8 +127,21 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     private var patientValidStartMs = 0L
     private var patientValidEndMs = 0L
 
-    private var doctorAnalysisStartMs = 0L
     private var patientAnalysisStartMs = 0L
+
+    private val frameCallback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!isModelPlaying || animDuration <= 0f || !::animator.isInitialized) return
+            if (playStartTime < 0L) {
+                playStartTime = frameTimeNanos
+            }
+            val elapsed = (frameTimeNanos - playStartTime) / 1_000_000_000f
+            val time = (startOffset + elapsed * playbackSpeed).mod(animDuration)
+            animator.applyAnimation(aniIndex, time)
+            animator.updateBoneMatrices()
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
 
     private val seekBarHandler = Handler(Looper.getMainLooper())
     private var seekBarRunnable: Runnable? = null
@@ -160,9 +175,9 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             )
         }
 
-        videoViewDoctor = findViewById(R.id.video_view_doctor)
+        sceneViewDoctor = findViewById(R.id.scene_view_doctor)
+        sceneViewDoctor.lifecycle = lifecycle
         videoViewPatient = findViewById(R.id.video_view_patient)
-        overlayDoctor = findViewById(R.id.overlay_doctor)
         overlayPatient = findViewById(R.id.overlay_patient)   // 新增
         btnLoadDoctor = findViewById(R.id.btn_load_doctor)
         btnLoadPatient = findViewById(R.id.btn_load_patient)
@@ -201,10 +216,10 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             override fun onStartTrackingTouch(seekBar: SeekBar) {
                 // 手指按下：停止自动更新，暂停视频
                 stopSeekBarUpdate()
-                videoViewDoctor.pause()
                 videoViewPatient.pause()
-                exoPlayerDoctor?.pause()
                 exoPlayerPatient?.pause()
+                pauseModel()
+                ivPause.setImageResource(android.R.drawable.ic_media_play)
             }
 
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
@@ -218,36 +233,23 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
 
         // 播放/暂停 控制按钮
         ivPause.setOnClickListener {
-            val isPlaying = (videoViewDoctor.isPlaying || videoViewPatient.isPlaying || exoPlayerDoctor?.isPlaying == true || exoPlayerPatient?.isPlaying == true)
+            val isPlaying = (videoViewPatient.isPlaying || exoPlayerPatient?.isPlaying == true || isModelPlaying)
             if (isPlaying) {
-                videoViewDoctor.pause()
                 videoViewPatient.pause()
-                exoPlayerDoctor?.pause()
                 exoPlayerPatient?.pause()
+                pauseModel()
                 stopSeekBarUpdate()
                 ivPause.setImageResource(android.R.drawable.ic_media_play)
             } else {
-                videoViewDoctor.start()
                 videoViewPatient.start()
-                exoPlayerDoctor?.play()
                 exoPlayerPatient?.play()
+                playModel()
                 startSeekBarUpdate()
                 ivPause.setImageResource(android.R.drawable.ic_media_pause)
             }
         }
 
-        btnLoadDoctor.setOnClickListener {
-            isPickingFile = true
-            pendingPicker = { uri ->
-                doctorUri = uri
-                videoViewDoctor.setVideoURI(uri)
-                videoViewDoctor.setOnPreparedListener { mp ->
-                    mp.setVolume(0f, 0f); mp.start(); mp.pause()
-                }
-                checkBothLoaded()
-            }
-            pickVideo.launch(arrayOf("video/*"))
-        }
+        btnLoadDoctor.visibility = View.GONE
 
         btnLoadPatient.setOnClickListener {
             isPickingFile = true
@@ -277,23 +279,89 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             runDetectionOnVideo(
                 uri = patientUri!!,
                 videoView = videoViewPatient,
-                overlay = overlayPatient,
-                isDoctor = false
+                overlay = overlayPatient
             )
+            playModelFrom(0L)
+        }
+
+        loadModel()
+    }
+
+    private fun loadModel() {
+        sceneViewDoctor.modelLoader.loadModelAsync(
+            fileLocation = "models/doctor_action_default.glb"
+        ) { model ->
+            if (model == null) {
+                Log.e("SceneView", "Model load failed")
+                return@loadModelAsync
+            }
+            val node = ModelNode(
+                modelInstance = model.instance,
+                autoAnimate = false,
+                scaleToUnits = null
+            ).apply {
+                transform(position = io.github.sceneview.math.Position(y = -2f))
+            }
+            sceneViewDoctor.addChildNode(node)
+            modelNode = node
+            animator = model.instance.animator
+            if (animator.animationCount > 0) {
+                animDuration = animator.getAnimationDuration(aniIndex)
+                animator.applyAnimation(aniIndex, 0f)
+                animator.updateBoneMatrices()
+            }
+        }
+    }
+
+    private fun playModelFrom(progressMs: Long) {
+        if (animDuration <= 0f || !::animator.isInitialized) return
+        val clamped = (progressMs % (animDuration * 1000f).toLong()).coerceAtLeast(0L)
+        startOffset = clamped / 1000f
+        animator.applyAnimation(aniIndex, startOffset)
+        animator.updateBoneMatrices()
+        playStartTime = -1L
+        isModelPlaying = true
+        Choreographer.getInstance().removeFrameCallback(frameCallback)
+        Choreographer.getInstance().postFrameCallback(frameCallback)
+    }
+
+    private fun playModel() {
+        if (animDuration <= 0f || !::animator.isInitialized) return
+        if (!isModelPlaying) {
+            playStartTime = -1L
+            isModelPlaying = true
+            Choreographer.getInstance().removeFrameCallback(frameCallback)
+            Choreographer.getInstance().postFrameCallback(frameCallback)
+        }
+    }
+
+    private fun pauseModel() {
+        isModelPlaying = false
+        Choreographer.getInstance().removeFrameCallback(frameCallback)
+    }
+
+    private fun seekModel(progressMs: Long) {
+        if (animDuration <= 0f || !::animator.isInitialized) return
+        val clamped = (progressMs % (animDuration * 1000f).toLong()).coerceAtLeast(0L)
+        val timeSec = clamped / 1000f
+        startOffset = timeSec
+        animator.applyAnimation(aniIndex, timeSec)
+        animator.updateBoneMatrices()
+        if (isModelPlaying) {
+            playStartTime = -1L
         }
     }
 
     // 新增方法，SeekBar 和段列表共用
     private fun seekTo(posMs: Long) {
-        videoViewDoctor.seekTo(posMs.toInt())
         videoViewPatient.seekTo(posMs.toInt())
-        videoViewDoctor.start()
         videoViewPatient.start()
+        seekModel(posMs)
+        playModel()
 
         playbackSeekPosMs = posMs
         playbackStartMs = System.currentTimeMillis()
 
-        updateOverlayFromCache(posMs, overlayDoctor, doctorFrameCache)
         updateOverlayFromCache(posMs, overlayPatient, patientFrameCache)
 
         startSeekBarUpdate()
@@ -308,11 +376,11 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         seekBarRunnable = object : Runnable {
             override fun run() {
                 // ✅ 直接用 VideoView 的播放位置查缓存（key 和 currentPosition 单位一致，都是视频相对毫秒）
-                val currentMs = videoViewDoctor.currentPosition.toLong()
+                val currentMs = videoViewPatient.currentPosition.toLong()
                 sb.progress = currentMs.toInt()
 
                 // 更新进度文本（当前 / 总时长）
-                val durationMs = (exoPlayerDoctor?.duration ?: videoViewDoctor.duration.toLong()).coerceAtLeast(0L)
+                val durationMs = (exoPlayerPatient?.duration ?: videoViewPatient.duration.toLong()).coerceAtLeast(0L)
                 if (durationMs > 0) {
                     tvTimeProgress.text = "${formatTime(currentMs)} / ${formatTime(durationMs)}"
                 } else {
@@ -320,8 +388,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                 }
 
                 // ✅ 骨骼提前2帧显示，补偿渲染延迟（1帧=100ms，2帧=200ms）
-                val skeletonMs = (currentMs + FRAME_INTERVAL_MS * 10).coerceAtMost(sb.max.toLong())
-                updateOverlayFromCache(skeletonMs, overlayDoctor, doctorFrameCache)
+                val skeletonMs = (currentMs + FRAME_INTERVAL_MS * BEFORE).coerceAtMost(sb.max.toLong())
                 updateOverlayFromCache(skeletonMs, overlayPatient, patientFrameCache)
 
                 seekBarHandler.postDelayed(this, 100)
@@ -361,8 +428,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     private fun runDetectionOnVideo(
         uri: Uri,
         videoView: VideoView,
-        overlay: OverlayView,
-        isDoctor: Boolean
+        overlay: OverlayView
     ) {
         // 获取视频分辨率在后台完成
         backgroundExecutor.execute {
@@ -394,44 +460,30 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                 val imageReader = ImageReader.newInstance(
                     readerWidth, readerHeight, ImageFormat.YUV_420_888, 2
                 )
-                val analysisThread = HandlerThread(
-                    if (isDoctor) "VideoAnalysis-Doctor" else "VideoAnalysis-Patient"
-                ).also { it.start() }
+                val analysisThread = HandlerThread("VideoAnalysis-Patient").also { it.start() }
                 val analysisHandler = Handler(analysisThread.looper)
 
-                if (isDoctor) {
-                    imageReaderDoctor?.close()
-                    imageReaderDoctor = imageReader
-                    analysisThreadDoctor?.quitSafely()
-                    analysisThreadDoctor = analysisThread
-                } else {
-                    imageReaderPatient?.close()
-                    imageReaderPatient = imageReader
-                    analysisThreadPatient?.quitSafely()
-                    analysisThreadPatient = analysisThread
-                }
+                imageReaderPatient?.close()
+                imageReaderPatient = imageReader
+                analysisThreadPatient?.quitSafely()
+                analysisThreadPatient = analysisThread
 
                 // 帧回调：加入时间戳降帧判断
                 imageReader.setOnImageAvailableListener({ reader ->
                     val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                     try {
                 val timestampUs = image.timestamp / 1000
-                val lastTs = if (isDoctor) lastFrameTsDoctor else lastFrameTsPatient
+                val lastTs = lastFrameTsPatient
 
                 // ✅ 用视频时间戳控制帧率
                 if (isPaused || timestampUs - lastTs < FRAME_INTERVAL_MS * 1000) return@setOnImageAvailableListener
 
-                val helper = if (isDoctor) {
-                    if (this::poseLandmarkerHelperDoctor.isInitialized) poseLandmarkerHelperDoctor else null
-                } else {
-                    if (this::poseLandmarkerHelperPatient.isInitialized) poseLandmarkerHelperPatient else null
-                }
+                val helper = if (this::poseLandmarkerHelperPatient.isInitialized) poseLandmarkerHelperPatient else null
                 // ✅ helper为null不占用时间窗口
                 helper ?: return@setOnImageAvailableListener
 
                 // ✅ 确认处理才更新时间戳
-                if (isDoctor) lastFrameTsDoctor = timestampUs
-                else lastFrameTsPatient = timestampUs
+                lastFrameTsPatient = timestampUs
 
                 val bitmap = image.toBitmapScaled(targetWidth = 256)
 
@@ -439,22 +491,13 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                     val landmarks = result.results[0].landmarks()
                     if (landmarks.isNotEmpty()) {
                         val pts = landmarks[0].map { LandmarkPt(it.x(), it.y()) }
-                        if (isDoctor) doctorPoseList.add(pts)
-                        else patientPoseList.add(pts)
+                        patientPoseList.add(pts)
                     }
 
                     // ✅ 用视频相对时间作为key（系统时间 - 分析开始时间）
-                    val videoRelativeMs = if (isDoctor) {
-                        System.currentTimeMillis() - doctorAnalysisStartMs
-                    } else {
-                        System.currentTimeMillis() - patientAnalysisStartMs
-                    }
+                    val videoRelativeMs = System.currentTimeMillis() - patientAnalysisStartMs
 
-                    if (isDoctor) {
-                        doctorFrameCache[videoRelativeMs] = FrameResult(result.results[0], bitmap.width, bitmap.height)
-                    } else {
-                        patientFrameCache[videoRelativeMs] = FrameResult(result.results[0], bitmap.width, bitmap.height)
-                    }
+                    patientFrameCache[videoRelativeMs] = FrameResult(result.results[0], bitmap.width, bitmap.height)
 
 
                     runOnUiThread {
@@ -495,38 +538,26 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                         prepare()
                         play()
 
-                        if (isDoctor) doctorAnalysisStartMs = System.currentTimeMillis()
-                        else patientAnalysisStartMs = System.currentTimeMillis()
+                        patientAnalysisStartMs = System.currentTimeMillis()
 
                         addListener(object : Player.Listener {
                             override fun onPlaybackStateChanged(state: Int) {
                                 if (state == Player.STATE_ENDED) {
-                                    if (!isDoctor) { // 当患者视频结束时
-                                        loadDoctorDataFromJson()
-                                        val score = calculateScoreDTW(doctorPoseList, patientPoseList)
-                                        tvScore.text="$score"
-                                        Log.d("mmmmm", "" + score)
-                                    }
+                                    loadDoctorDataFromJson()
+                                    val score = calculateScoreDTW(doctorPoseList, patientPoseList)
+                                    tvScore.text="$score"
+                                    Log.d("mmmmm", "" + score)
                                     imageReader.close()
                                     analysisThread.quitSafely()
                                     backgroundExecutor.execute {
-                                        if (isDoctor) {
-                                            if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperDoctor.isInitialized)
-                                                poseLandmarkerHelperDoctor.clearPoseLandmarker()
-                                        } else {
-                                            if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperPatient.isInitialized)
-                                                poseLandmarkerHelperPatient.clearPoseLandmarker()
-                                        }
+                                        if (this@AnalysisActivityOnlyPatient::poseLandmarkerHelperPatient.isInitialized)
+                                            poseLandmarkerHelperPatient.clearPoseLandmarker()
                                     }
                                 }
                             }
                         })
                     }
-                if (isDoctor) {
-                    exoPlayerDoctor?.release(); exoPlayerDoctor = player
-                } else {
-                    exoPlayerPatient?.release(); exoPlayerPatient = player
-                }
+                exoPlayerPatient?.release(); exoPlayerPatient = player
             } // end of runOnUiThread
         } // end of backgroundExecutor.execute
     }
@@ -878,7 +909,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         }
 
         // ✅ 用 ExoPlayer 获取时长，VideoView 结束后 duration 可能不准
-        val durationMs = exoPlayerDoctor?.duration ?: videoViewDoctor.duration.toLong()
+        val durationMs = exoPlayerPatient?.duration ?: videoViewPatient.duration.toLong()
         if (durationMs > 0) {
             sb.max = durationMs.toInt()
             sb.progress = 0
@@ -886,10 +917,10 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             tvTimeProgress.text = "${formatTime(0)} / ${formatTime(durationMs)}"
         }
 
-        videoViewDoctor.seekTo(0)
         videoViewPatient.seekTo(0)
-        videoViewDoctor.start()   // ✅ 确保 VideoView 从头播放
         videoViewPatient.start()
+        seekModel(0L)
+        playModel()
 
         // ✅ 初始化起点，必须在 startSeekBarUpdate 之前
         playbackSeekPosMs = 0L
@@ -1137,11 +1168,9 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     // ── 生命周期 ──────────────────────────────────────────────────────────────
     override fun onPause() {
         if (!isPickingFile) {
-            overlayDoctor.clear()
             overlayPatient.clear()
-            if (videoViewDoctor.isPlaying) videoViewDoctor.stopPlayback()
             if (videoViewPatient.isPlaying) videoViewPatient.stopPlayback()
-            videoViewDoctor.visibility = View.GONE
+            pauseModel()
             videoViewPatient.visibility = View.GONE
         }
         isPickingFile = false
@@ -1149,12 +1178,10 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     }
 
     override fun onDestroy() {
-        exoPlayerDoctor?.release(); exoPlayerDoctor = null
         exoPlayerPatient?.release(); exoPlayerPatient = null
-        imageReaderDoctor?.close(); imageReaderDoctor = null
         imageReaderPatient?.close(); imageReaderPatient = null
-        analysisThreadDoctor?.quitSafely(); analysisThreadDoctor = null
         analysisThreadPatient?.quitSafely(); analysisThreadPatient = null
+        pauseModel()
 
         stopSeekBarUpdate()
 

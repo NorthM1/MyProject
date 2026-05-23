@@ -67,13 +67,8 @@
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintEnd_toEndOf="parent">
 
-                        <VideoView
-                            android:id="@+id/video_view_doctor"
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent" />
-
-                        <com.example.myproject.OverlayView
-                            android:id="@+id/overlay_doctor"
+                        <io.github.sceneview.SceneView
+                            android:id="@+id/scene_view_doctor"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent" />
                     </FrameLayout>
