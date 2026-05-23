@@ -121,13 +121,14 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
 
     private var lastFrameTsPatient = 0L
 
-    private var playbackStartMs = 0L
-    private var playbackSeekPosMs = 0L
     // 患者有效段起始时间（毫秒）
     private var patientValidStartMs = 0L
     private var patientValidEndMs = 0L
 
     private var patientAnalysisStartMs = 0L
+
+    // ✅医生帧 → 患者有效段帧 的对齐映射，DTW完成后赋值
+    private var doctorToPatientAlignment: IntArray = IntArray(0)
 
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
@@ -136,7 +137,16 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                 playStartTime = frameTimeNanos
             }
             val elapsed = (frameTimeNanos - playStartTime) / 1_000_000_000f
-            val time = (startOffset + elapsed * playbackSpeed).mod(animDuration)
+            val time = startOffset + elapsed * playbackSpeed
+
+            // ✅ 动画到达末尾时暂停，不再循环
+            if (time >= animDuration) {
+                animator.applyAnimation(aniIndex, animDuration)
+                animator.updateBoneMatrices()
+                pauseModel()
+                return
+            }
+
             animator.applyAnimation(aniIndex, time)
             animator.updateBoneMatrices()
             Choreographer.getInstance().postFrameCallback(this)
@@ -200,9 +210,16 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         rv.visibility = View.GONE
 
         segmentAdapter = SegmentAdapter(segmentItems) { item ->
-            sb.progress = item.doctorStartMs.toInt()
-            seekTo(item.doctorStartMs)  // 直接复用 SeekBar 的跳转逻辑
-            // 点击列表后滚动到顶部以确保视频可见
+            // ✅ Step6：先停止当前轮询，避免 seek 过程中被旧的进度值覆盖
+            stopSeekBarUpdate()
+            // ✅ 暂停当前播放状态，由 seekTo() 内部统一恢复
+            videoViewPatient.pause()
+            pauseModel()
+
+            // seekTo() 内部会完成：模型定位 → 患者视频定位 → 重启轮询 → 更新暂停按钮图标
+            seekTo(item.doctorStartMs)
+
+            // 点击列表后滚动到顶部确保视频可见
             val nested = findViewById<NestedScrollView>(R.id.nested_scroll)
             nested?.post { nested.scrollTo(0, 0) }
         }
@@ -353,18 +370,38 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     }
 
     // 新增方法，SeekBar 和段列表共用
-    private fun seekTo(posMs: Long) {
-        videoViewPatient.seekTo(posMs.toInt())
-        videoViewPatient.start()
-        seekModel(posMs)
+    /**
+     * ✅ Step4：以医生动画时间为基准的统一跳转方法
+     * @param doctorMs 目标位置（医生动画毫秒）
+     */
+    private fun seekTo(doctorMs: Long) {
+        // ① 模型跳转到指定位置
+        seekModel(doctorMs)
         playModel()
 
-        playbackSeekPosMs = posMs
-        playbackStartMs = System.currentTimeMillis()
+        // ② 通过 alignment 换算患者视频目标位置
+        val patientTargetMs: Long = if (doctorToPatientAlignment.isNotEmpty()) {
+            val doctorFrameIndex = (doctorMs / FRAME_INTERVAL_MS).toInt()
+                .coerceIn(0, doctorToPatientAlignment.size - 1)
+            val patientFrameIndex = doctorToPatientAlignment[doctorFrameIndex]
+            // 患者有效段相对帧 × 帧间隔 + 有效段在原视频中的起始偏移
+            patientFrameIndex * FRAME_INTERVAL_MS + patientValidStartMs
+        } else {
+            // alignment 尚未就绪时（分析未完成），直接用传入值兜底
+            doctorMs
+        }
 
-        updateOverlayFromCache(posMs, overlayPatient, patientFrameCache)
+        // ③ 患者视频跳转并继续播放
+        videoViewPatient.seekTo(patientTargetMs.toInt())
+        videoViewPatient.start()
 
+        // ④ 立即更新骨骼叠加层（不等下一次 100ms 轮询）
+        updateOverlayFromCache(patientTargetMs, overlayPatient, patientFrameCache)
+
+        // ⑤ 启动进度条轮询
         startSeekBarUpdate()
+
+        ivPause.setImageResource(android.R.drawable.ic_media_pause)
     }
 
     private fun checkBothLoaded() {
@@ -375,21 +412,30 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         stopSeekBarUpdate()
         seekBarRunnable = object : Runnable {
             override fun run() {
-                // ✅ 直接用 VideoView 的播放位置查缓存（key 和 currentPosition 单位一致，都是视频相对毫秒）
-                val currentMs = videoViewPatient.currentPosition.toLong()
-                sb.progress = currentMs.toInt()
+                val doctorCurrentMs = getCurrentDoctorMs()
+                sb.progress = doctorCurrentMs.toInt()
 
-                // 更新进度文本（当前 / 总时长）
-                val durationMs = (exoPlayerPatient?.duration ?: videoViewPatient.duration.toLong()).coerceAtLeast(0L)
-                if (durationMs > 0) {
-                    tvTimeProgress.text = "${formatTime(currentMs)} / ${formatTime(durationMs)}"
+                val doctorDurationMs = (animDuration * 1000f).toLong()
+                tvTimeProgress.text = "${formatTime(doctorCurrentMs)} / ${formatTime(doctorDurationMs)}"
+
+                // ✅ 骨骼叠加层直接用患者视频当前位置驱动，与视频画面天然对齐
+                val patientCurrentMs = videoViewPatient.currentPosition.toLong()
+                val skeletonMs = if (patientFrameCache.isNotEmpty()) {
+                    (patientCurrentMs + FRAME_INTERVAL_MS * BEFORE)
+                        .coerceAtMost(patientFrameCache.lastKey())
                 } else {
-                    tvTimeProgress.text = formatTime(currentMs)
+                    patientCurrentMs
                 }
-
-                // ✅ 骨骼提前2帧显示，补偿渲染延迟（1帧=100ms，2帧=200ms）
-                val skeletonMs = (currentMs + FRAME_INTERVAL_MS * BEFORE).coerceAtMost(sb.max.toLong())
                 updateOverlayFromCache(skeletonMs, overlayPatient, patientFrameCache)
+
+                // ✅ 医生动画播完后，暂停患者视频并停止轮询
+                if (doctorCurrentMs >= doctorDurationMs) {
+                    videoViewPatient.pause()
+                    stopSeekBarUpdate()
+                    ivPause.setImageResource(android.R.drawable.ic_media_play)
+                    sb.progress = sb.max
+                    return
+                }
 
                 seekBarHandler.postDelayed(this, 100)
             }
@@ -547,6 +593,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
                                     val score = calculateScoreDTW(doctorPoseList, patientPoseList)
                                     tvScore.text="$score"
                                     Log.d("mmmmm", "" + score)
+                                    Log.d("mmmmm", "alignment size: ${doctorToPatientAlignment.size}")
                                     imageReader.close()
                                     analysisThread.quitSafely()
                                     backgroundExecutor.execute {
@@ -813,7 +860,7 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
 
         // ── 第二步：全局对齐路径，用于动态切块 ───────────────────────────────
         // 在医生序列和患者有效段之间建立帧级对应关系
-        val alignment = getAlignmentPath(doctorSeq, validPatientSeq, windowRatio = 0.15f)
+        doctorToPatientAlignment = getAlignmentPath(doctorSeq, validPatientSeq, windowRatio = 0.15f)
 
         Log.d("mmmmm", "全局路径回溯完成，医生${doctorSeq.size}帧 → 患者有效段${validPatientSeq.size}帧")
 
@@ -828,8 +875,8 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
             if (doctorStart >= doctorSeq.size) break
 
             // ✅ 从全局路径取患者边界，完全消除速度影响
-            val patStart = alignment[doctorStart]
-            val patEnd = (alignment[doctorEnd - 1] + 1).coerceAtMost(validPatientSeq.size)
+            val patStart = doctorToPatientAlignment[doctorStart]
+            val patEnd = (doctorToPatientAlignment[doctorEnd - 1] + 1).coerceAtMost(validPatientSeq.size)
 
             if (patStart >= patEnd || doctorStart >= doctorEnd) {
                 segIndex++; continue
@@ -909,24 +956,25 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         }
 
         // ✅ 用 ExoPlayer 获取时长，VideoView 结束后 duration 可能不准
-        val durationMs = exoPlayerPatient?.duration ?: videoViewPatient.duration.toLong()
-        if (durationMs > 0) {
-            sb.max = durationMs.toInt()
+        // ✅ SeekBar 范围改为医生动画总时长，进度值单位为医生动画毫秒
+        val doctorDurationMs = (animDuration * 1000f).toLong()
+        if (doctorDurationMs > 0) {
+            sb.max = doctorDurationMs.toInt()
             sb.progress = 0
-            // 初始化进度文本
-            tvTimeProgress.text = "${formatTime(0)} / ${formatTime(durationMs)}"
+            tvTimeProgress.text = "${formatTime(0)} / ${formatTime(doctorDurationMs)}"
         }
 
-        videoViewPatient.seekTo(0)
+        // ✅ Step5：患者视频从有效段起始位置开始播放，跳过头部无效动作
+        videoViewPatient.seekTo(patientValidStartMs.toInt())
         videoViewPatient.start()
+
+// 模型从头开始
         seekModel(0L)
         playModel()
 
-        // ✅ 初始化起点，必须在 startSeekBarUpdate 之前
-        playbackSeekPosMs = 0L
-        playbackStartMs = System.currentTimeMillis()
-
         startSeekBarUpdate()
+
+        ivPause.setImageResource(android.R.drawable.ic_media_pause)
 
         tvScore.text=totalScore.toString()
         tvNums.text="共 ${segIndex} 个分段"
@@ -1194,6 +1242,21 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
         val sec = totalSec % 60
         return String.format("%d:%02d", min, sec)
     }
+
+    /**
+     * 获取当前医生动画的播放位置（毫秒）
+     * playStartTime 由 Choreographer 的 frameTimeNanos 赋值，与 System.nanoTime() 单位一致
+     */
+    private fun getCurrentDoctorMs(): Long {
+        if (!isModelPlaying || playStartTime < 0L) {
+            return (startOffset * 1000f).toLong()
+        }
+        val elapsedNs = System.nanoTime() - playStartTime
+        val elapsedSec = elapsedNs / 1_000_000_000f
+        val currentTimeSec = (startOffset + elapsedSec * playbackSpeed).mod(animDuration)
+        return (currentTimeSec * 1000f).toLong()
+    }
+
 
     // ── Listener ──────────────────────────────────────────────────────────────
     override fun onError(error: String, errorCode: Int) {
