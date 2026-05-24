@@ -38,4 +38,10 @@
 
     <!-- 分割线 -->
     <color name="divider">#F0F0F0</color>
+
+    <!-- 播放速度按钮 -->
+    <color name="active_speed">#1D9E75</color>
+    <color name="inactive_speed">#666666</color>
+    <color name="active_speed_text">#1D9E75</color>
+    <color name="inactive_speed_text">#AAAAAA</color>
 </resources>

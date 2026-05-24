@@ -20,10 +20,10 @@
         <activity android:name=".AnalysisActivity"/>
 
 <!--        <activity android:name=".DoctorExtractionActivity"/>-->
-        <activity android:name=".ui.activity.MainActivity"/>
+        <activity android:name=".AnalysisActivityOnlyPatient"/>
 
         <activity
-            android:name=".AnalysisActivityOnlyPatient"
+            android:name=".ui.activity.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

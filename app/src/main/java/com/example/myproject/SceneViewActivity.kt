@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.Choreographer
 import android.widget.ImageButton
 import android.widget.SeekBar
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.filament.Box
 import com.google.android.filament.gltfio.Animator
@@ -26,7 +27,7 @@ class SceneViewActivity : AppCompatActivity() {
 
     private var playStartTime = -1L
     private var animDuration: Float=0f
-    var playbackSpeed = 1.0f
+    private var playbackSpeed = 1.0f
     private var isPlaying = false
 
     // UI 按钮
@@ -35,6 +36,12 @@ class SceneViewActivity : AppCompatActivity() {
     private lateinit var btnRewind: ImageButton
     private lateinit var btnForward: ImageButton
     private lateinit var btnCompleteTraining: MaterialButton
+    private lateinit var btnSpeed05: MaterialButton
+    private lateinit var btnSpeed1: MaterialButton
+    private lateinit var btnSpeed2: MaterialButton
+    private lateinit var tvCurrentTime: TextView
+    private lateinit var tvTotalTime: TextView
+    private lateinit var btnResetView: MaterialButton
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +54,12 @@ class SceneViewActivity : AppCompatActivity() {
         btnRewind = findViewById(R.id.btn_rewind)
         btnForward = findViewById(R.id.btn_forward)
         btnCompleteTraining = findViewById(R.id.btn_complete_training)
+        btnSpeed05 = findViewById(R.id.btn_speed_05)
+        btnSpeed1 = findViewById(R.id.btn_speed_1)
+        btnSpeed2 = findViewById(R.id.btn_speed_2)
+        tvCurrentTime = findViewById(R.id.tv_current_time)
+        tvTotalTime = findViewById(R.id.tv_total_time)
+        btnResetView = findViewById(R.id.btn_reset_view)
 
         btnPlayPause.setOnClickListener {
             // 切换播放/暂停
@@ -80,6 +93,7 @@ class SceneViewActivity : AppCompatActivity() {
                 animator.applyAnimation(aniIndex, newTime)
                 animator.updateBoneMatrices()
                 seekBar.progress = newProgress
+                tvCurrentTime.text = formatTime(newTime)
             }
         }
 
@@ -93,6 +107,7 @@ class SceneViewActivity : AppCompatActivity() {
                 animator.applyAnimation(aniIndex, newTime)
                 animator.updateBoneMatrices()
                 seekBar.progress = newProgress
+                tvCurrentTime.text = formatTime(newTime)
             }
         }
 
@@ -100,6 +115,16 @@ class SceneViewActivity : AppCompatActivity() {
             // 占位点击事件：后续实现完成训练逻辑
             Log.d("SceneView", "Complete training clicked")
         }
+
+        btnSpeed05.setOnClickListener { setPlaybackSpeed(0.5f) }
+        btnSpeed1.setOnClickListener { setPlaybackSpeed(1.0f) }
+        btnSpeed2.setOnClickListener { setPlaybackSpeed(2.0f) }
+
+        btnResetView.setOnClickListener {
+            sceneView.cameraNode.position =
+                io.github.sceneview.math.Position(z = 9f)
+        }
+
         loadModel()
     }
 
@@ -139,7 +164,10 @@ class SceneViewActivity : AppCompatActivity() {
             }
             animDuration=animator.getAnimationDuration(aniIndex)
             Log.d("log", "动画时长: ${animDuration}")
-            createSeekBar()
+            runOnUiThread {
+                tvTotalTime.text = formatTime(animDuration)
+                createSeekBar()
+            }
         //modelNode?.playAnimation(0)
         //            animator.applyAnimation(0, time)
         //            animator.updateBoneMatrices() // 必须调用，否则骨骼不更新
@@ -154,7 +182,7 @@ class SceneViewActivity : AppCompatActivity() {
                 p0: SeekBar?,
                 p1: Int,
                 p2: Boolean
-            ) {
+        ) {
                 if (p2) {
                     // 用户主动拖动
                     if (isPlaying) playAnimationFrom(p1)
@@ -163,6 +191,7 @@ class SceneViewActivity : AppCompatActivity() {
                         startOffset = p1 * animDuration / 100
                         animator.applyAnimation(aniIndex, startOffset)
                         animator.updateBoneMatrices()
+                        tvCurrentTime.text = formatTime(startOffset)
                     }
                 }
             }
@@ -209,6 +238,7 @@ class SceneViewActivity : AppCompatActivity() {
             // 同步 SeekBar 位置
             val progress = ((time / animDuration) * 100).toInt()
             seekBar.progress = progress
+            tvCurrentTime.text = formatTime(time)
             if (isPlaying) Choreographer.getInstance().postFrameCallback(this)
         }
     }
@@ -217,6 +247,34 @@ class SceneViewActivity : AppCompatActivity() {
     fun stopAnimation() {
         isPlaying = false
         Choreographer.getInstance().removeFrameCallback(frameCallback)
+    }
+
+    private fun setPlaybackSpeed(speed: Float) {
+        if (playbackSpeed == speed) return
+        // 如果正在播放，从当前位置无缝切换到新速度
+        if (isPlaying && ::animator.isInitialized) {
+            val curTime = (seekBar.progress / 100f) * animDuration
+            startOffset = curTime
+            playStartTime = -1L
+        }
+        playbackSpeed = speed
+        updateSpeedButtons()
+    }
+
+    private fun updateSpeedButtons() {
+        btnSpeed05.setStrokeColorResource(if (playbackSpeed == 0.5f) R.color.active_speed else R.color.inactive_speed)
+        btnSpeed05.setTextColor(if (playbackSpeed == 0.5f) getColor(R.color.active_speed_text) else getColor(R.color.inactive_speed_text))
+        btnSpeed1.setStrokeColorResource(if (playbackSpeed == 1.0f) R.color.active_speed else R.color.inactive_speed)
+        btnSpeed1.setTextColor(if (playbackSpeed == 1.0f) getColor(R.color.active_speed_text) else getColor(R.color.inactive_speed_text))
+        btnSpeed2.setStrokeColorResource(if (playbackSpeed == 2.0f) R.color.active_speed else R.color.inactive_speed)
+        btnSpeed2.setTextColor(if (playbackSpeed == 2.0f) getColor(R.color.active_speed_text) else getColor(R.color.inactive_speed_text))
+    }
+
+    private fun formatTime(seconds: Float): String {
+        val totalSecs = seconds.toInt()
+        val min = totalSecs / 60
+        val sec = totalSecs % 60
+        return "%d:%02d".format(min, sec)
     }
 
     override fun onPause() {
