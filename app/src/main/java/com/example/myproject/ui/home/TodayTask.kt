@@ -1,9 +1,12 @@
 package com.example.myproject.ui.home
 
 data class TodayTask(
-    val id: Int,
+    val actionId: String,
     val name: String,
     val meta: String,
-    val isCompleted: Boolean
-)
+    val completedGroups: Int,
+    val totalGroups: Int
+) {
+    val isCompleted: Boolean get() = completedGroups >= totalGroups
+}
 

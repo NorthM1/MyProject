@@ -11,10 +11,16 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PlanActionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insert(planAction: PlanActionEntity)
+    suspend fun insert(planAction: PlanActionEntity): Long
 
     @Query("SELECT * FROM plan_action")
     fun getAllPlanActions(): Flow<List<PlanActionEntity>>
+
+    @Query("SELECT * FROM plan_action WHERE plan_id = :planId AND action_id = :actionId LIMIT 1")
+    suspend fun findPlanAction(planId: String, actionId: String): PlanActionEntity?
+
+    @Query("SELECT * FROM plan_action WHERE plan_id = :planId")
+    suspend fun getPlanActionsForPlan(planId: String): List<PlanActionEntity>
 
     @Query("""
         SELECT 

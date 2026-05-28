@@ -13,7 +13,7 @@ class TodayTaskAdapter : ListAdapter<TodayTask, TodayTaskAdapter.TaskViewHolder>
         oldItem: TodayTask,
         newItem: TodayTask
     ): Boolean {
-        return oldItem.id == newItem.id
+        return oldItem.actionId == newItem.actionId
     }
 
     override fun areContentsTheSame(

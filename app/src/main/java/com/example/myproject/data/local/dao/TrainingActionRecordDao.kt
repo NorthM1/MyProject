@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TrainingActionRecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insert(record: TrainingActionRecordEntity)
+    suspend fun insert(record: TrainingActionRecordEntity): Long
 
     @Query("SELECT * FROM training_action_record")
     fun getAllRecords(): Flow<List<TrainingActionRecordEntity>>

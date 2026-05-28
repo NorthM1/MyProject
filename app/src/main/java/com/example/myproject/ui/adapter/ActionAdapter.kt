@@ -13,14 +13,14 @@ class ActionAdapter(private val onItemClick: ((ActionItemModel) -> Unit)? = null
         p0: ActionItemModel,
         p1: ActionItemModel
     ): Boolean {
-        return p0===p1
+        return p0.actionId == p1.actionId
     }
 
     override fun areContentsTheSame(
         p0: ActionItemModel,
         p1: ActionItemModel
     ): Boolean {
-        return p0.actionId==p1.actionId
+        return p0 == p1
     }
 }){
     override fun onCreateViewHolder(

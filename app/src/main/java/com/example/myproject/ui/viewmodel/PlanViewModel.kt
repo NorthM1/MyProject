@@ -20,12 +20,15 @@ class PlanViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         repository = PlanRepository(application)
-        fetchPlans()
+        val userId = (application as MyApplication).userId
+        if (userId != null) {
+            fetchPlans(userId)
+        }
     }
 
-    private fun fetchPlans() {
+    private fun fetchPlans(userId: String) {
         viewModelScope.launch {
-            repository.getPlanItemModel(MyApplication().userId!!).collect { planList -> _plans.value = planList }
+            repository.getPlanItemModel(userId).collect { planList -> _plans.value = planList }
         }
     }
 }

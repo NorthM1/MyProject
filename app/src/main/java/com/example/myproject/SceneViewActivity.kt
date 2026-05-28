@@ -7,7 +7,10 @@ import android.view.Choreographer
 import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.example.myproject.repository.PlanRepository
 import com.google.android.filament.Box
 import com.google.android.filament.gltfio.Animator
 import com.google.android.material.button.MaterialButton
@@ -15,6 +18,9 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import io.github.sceneview.SceneView
 import io.github.sceneview.model.ModelInstance
 import io.github.sceneview.node.ModelNode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SceneViewActivity : AppCompatActivity() {
 
@@ -29,6 +35,11 @@ class SceneViewActivity : AppCompatActivity() {
     private var animDuration: Float=0f
     private var playbackSpeed = 1.0f
     private var isPlaying = false
+
+    // 训练相关
+    private lateinit var repository: PlanRepository
+    private var actionId: String? = null
+    private var userId: String? = null
 
     // UI 按钮
     private lateinit var btnPlayPause: FloatingActionButton
@@ -46,6 +57,11 @@ class SceneViewActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_sceneview)
+
+        actionId = intent.getStringExtra("actionId")
+        userId = (application as MyApplication).userId
+        repository = PlanRepository(this)
+
         sceneView = findViewById<SceneView>(R.id.scene_view)
         sceneView.lifecycle=lifecycle
         seekBar=findViewById<SeekBar>(R.id.seek_bar)
@@ -79,7 +95,7 @@ class SceneViewActivity : AppCompatActivity() {
 
         btnCompare.setOnClickListener {
             // 跳转到 AnalysisActivity
-            val intent = Intent(this, AnalysisActivity::class.java)
+            val intent = Intent(this, AnalysisActivityOnlyPatient::class.java)
             startActivity(intent)
         }
 
@@ -112,8 +128,23 @@ class SceneViewActivity : AppCompatActivity() {
         }
 
         btnCompleteTraining.setOnClickListener {
-            // 占位点击事件：后续实现完成训练逻辑
-            Log.d("SceneView", "Complete training clicked")
+            val uid = userId ?: return@setOnClickListener
+            val aid = actionId ?: return@setOnClickListener
+            lifecycleScope.launch {
+                btnCompleteTraining.isEnabled = false
+                try {
+                    val completedGroups = withContext(Dispatchers.IO) {
+                        repository.completeActionGroup(uid, aid)
+                    }
+                    val msg = "已完成 $completedGroups 组"
+                    Toast.makeText(this@SceneViewActivity, msg, Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Log.e("SceneView", "完成训练失败", e)
+                    Toast.makeText(this@SceneViewActivity, "操作失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                } finally {
+                    btnCompleteTraining.isEnabled = true
+                }
+            }
         }
 
         btnSpeed05.setOnClickListener { setPlaybackSpeed(0.5f) }

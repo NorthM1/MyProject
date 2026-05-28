@@ -3,9 +3,12 @@ package com.example.myproject.data.local.testdata
 import com.example.myproject.data.local.entity.UserPlanEntity
 
 object TestUserPlanEntity {
-    private const val PLAN_START_TIME = 1710547200000L
+    /** 训练开始时间戳：当前时间 - 13天 */
+    private val startTimestamp: Long
+        get() = System.currentTimeMillis() - 13 * 86_400_000L
 
     fun getTestUserPlanList(): List<UserPlanEntity> {
+        val start = startTimestamp
         return listOf(
             UserPlanEntity(
                 _id = 1,
@@ -13,10 +16,10 @@ object TestUserPlanEntity {
                 userId = "user_1001",
                 status = UserPlanEntity.Companion.Status.IN_PROGRESS,
                 isFavorite = true,
-                startDate = PLAN_START_TIME,
-                lastCompletedTime = PLAN_START_TIME + 86400000L,
-                createdAt = PLAN_START_TIME,
-                updatedAt = PLAN_START_TIME,
+                startDate = start,
+                lastCompletedTime = start + 10 * 86_400_000L,
+                createdAt = start,
+                updatedAt = start,
                 syncStatus = UserPlanEntity.Companion.SyncStatus.SYNCED
             ),
             UserPlanEntity(
@@ -27,11 +30,22 @@ object TestUserPlanEntity {
                 isFavorite = false,
                 startDate = null,
                 lastCompletedTime = null,
-                createdAt = PLAN_START_TIME,
-                updatedAt = PLAN_START_TIME,
+                createdAt = start,
+                updatedAt = start,
+                syncStatus = UserPlanEntity.Companion.SyncStatus.SYNCED
+            ),
+            UserPlanEntity(
+                _id = 3,
+                planId = "plan_003",
+                userId = "user_1001",
+                status = UserPlanEntity.Companion.Status.NOT_STARTED,
+                isFavorite = false,
+                startDate = null,
+                lastCompletedTime = null,
+                createdAt = start,
+                updatedAt = start,
                 syncStatus = UserPlanEntity.Companion.SyncStatus.SYNCED
             )
         )
     }
 }
-

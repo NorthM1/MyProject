@@ -31,9 +31,7 @@ class MainActivity : BaseActivity<ActivityMainBinding> (){
         val tabs = binding.run {
             mapOf(
                 R.id.home_fragment to tabHome,
-//                R.id.action_fragment to tabAction,
-                R.id.plan_fragment to tabPlan,
-                R.id.my_fragment to tabMy
+                R.id.plan_fragment to tabPlan
             )
         }
 

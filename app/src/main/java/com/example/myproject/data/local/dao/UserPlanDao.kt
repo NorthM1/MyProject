@@ -43,8 +43,14 @@ interface UserPlanDao {
     """)
     fun getUserPlansWithDetails(userId: String): Flow<List<UserPlanWithDetails>>
 
+    @Query("SELECT plan_id FROM user_plan WHERE user_id = :userId AND status = ${UserPlanEntity.Companion.Status.IN_PROGRESS} ORDER BY _id ASC LIMIT 1")
+    fun getActivePlanId(userId: String): Flow<String?>
+
+    @Query("SELECT plan_id FROM user_plan WHERE user_id = :userId AND status = ${UserPlanEntity.Companion.Status.IN_PROGRESS} ORDER BY _id ASC LIMIT 1")
+    suspend fun getActivePlanIdOnce(userId: String): String?
+
     @Query("""
-        SELECT 
+        SELECT
             up.plan_id AS planId,
             up.user_id AS userId,
             p.name AS title,

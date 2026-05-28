@@ -130,6 +130,8 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
     // ✅医生帧 → 患者有效段帧 的对齐映射，DTW完成后赋值
     private var doctorToPatientAlignment: IntArray = IntArray(0)
 
+    private var patientProcessedFrameCount = 0L
+
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!isModelPlaying || animDuration <= 0f || !::animator.isInitialized) return
@@ -542,7 +544,6 @@ class AnalysisActivityOnlyPatient : AppCompatActivity(), PoseLandmarkerHelper.La
 
                     // ✅ 用视频相对时间作为key（系统时间 - 分析开始时间）
                     val videoRelativeMs = System.currentTimeMillis() - patientAnalysisStartMs
-
                     patientFrameCache[videoRelativeMs] = FrameResult(result.results[0], bitmap.width, bitmap.height)
 
 

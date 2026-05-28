@@ -10,18 +10,8 @@
         android:label="Home" />
 
     <fragment
-        android:id="@+id/action_fragment"
-        android:name="com.example.myproject.ui.action.ActionFragment"
-        android:label="Action" />
-
-    <fragment
         android:id="@+id/plan_fragment"
         android:name="com.example.myproject.ui.fragment.PlanFragment"
         android:label="Plan" />
-
-    <fragment
-        android:id="@+id/my_fragment"
-        android:name="com.example.myproject.ui.fragment.MyFragment"
-        android:label="My" />
 
 </navigation>
