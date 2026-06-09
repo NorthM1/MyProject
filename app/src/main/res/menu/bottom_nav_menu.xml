@@ -6,19 +6,9 @@
         android:title="@string/title_home" />
 
     <item
-        android:id="@+id/action_fragment"
-        android:icon="@drawable/action_selector"
-        android:title="@string/title_action" />
-
-    <item
         android:id="@+id/plan_fragment"
         android:icon="@drawable/plan_selector"
         android:title="@string/title_plan" />
-
-    <item
-        android:id="@+id/my_fragment"
-        android:icon="@drawable/my_selector"
-        android:title="@string/title_my" />
 </menu>
 
 

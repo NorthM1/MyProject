@@ -739,12 +739,13 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
 
     // ── 多指标加权分段得分 ───────────────────────────────────
     /**
-     * 多指标加权评分模型
-     * S_avg  = max(0, 1 - (avgAngleDiff/30)^1.5) * 100   权重 0.5
-     * S_err  = (1 - errorFrameRatio) * 100                权重 0.3
-     * S_max  = max(0, 1 - maxAngleDiff/90) * 100          权重 0.2
+     * 多指标加权评分模型（四维度）
+     * S_avg   = max(0, 1 - (avgAngleDiff/30)^1.5) * 100   权重 0.5
+     * S_err   = (1 - errorFrameRatio) * 100                权重 0.2
+     * S_max   = max(0, 1 - maxAngleDiff/90) * 100          权重 0.2
+     * S_speed = 速度偏移子分                                 权重 0.1
      */
-    fun computeSegmentScore(dtwResult: DTWResult): Int {
+    fun computeSegmentScore(dtwResult: DTWResult, speedScore: Double): Int {
         if (dtwResult.avgAngleDiff == Float.MAX_VALUE) return 0
 
         // ① 平均偏差子分：非线性幂函数，alpha=1.5
@@ -757,9 +758,54 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
         // ③ 最大偏差子分：线性，上限90度
         val sMax = (1f - dtwResult.maxAngleDiff / 90f).coerceIn(0f, 1f) * 100f
 
-        // ④ 加权综合
-        return (0.5f * sAvg + 0.3f * sErr + 0.2f * sMax)
+        // ④ 四维度加权综合：空间三维(0.5+0.2+0.2) + 时间维(0.1)
+        return (0.5f * sAvg + 0.2f * sErr + 0.2f * sMax + 0.1f * speedScore)
             .coerceIn(0f, 100f).toInt()
+    }
+
+    /**
+     * 计算速度偏移子分 S_speed（时间维度）
+     * 利用DTW全局对齐路径评估患者在分段内的动作速率与标准速率的偏差
+     *
+     * @param dtwPath    DTW全局对齐路径，path[doctorFrame] = patientFrame
+     * @param startIndex 分段在医生序列中的起始帧索引
+     * @param endIndex   分段在医生序列中的结束帧索引（不包含）
+     * @param windowSize 滑动窗口大小，默认5帧
+     * @return S_speed ∈ [0, 100]，分段过短无法评估时返回100
+     */
+    fun calculateSpeedScore(
+        dtwPath: IntArray,
+        startIndex: Int,
+        endIndex: Int,
+        windowSize: Int = 5
+    ): Double {
+        val segFrameCount = endIndex - startIndex
+        // 至少需要 windowSize+1 帧才能计算至少一个斜率
+        if (segFrameCount <= windowSize || startIndex + windowSize >= dtwPath.size) {
+            return 100.0
+        }
+
+        // 实际可用的窗口终点（不超过分段边界和数组边界）
+        val maxI = minOf(endIndex - windowSize, dtwPath.size - windowSize)
+        if (maxI <= startIndex) return 100.0
+
+        var sumAbsDeviation = 0.0
+        var count = 0
+
+        for (i in startIndex until maxI) {
+            // r_i = 患者帧位移 / 医生帧位移，理想值 ≈ 1.0（完全同步）
+            val deltaPatient = dtwPath[i + windowSize] - dtwPath[i]
+            val ri = deltaPatient.toDouble() / windowSize
+            sumAbsDeviation += Math.abs(ri - 1.0)
+            count++
+        }
+
+        if (count == 0) return 100.0
+
+        // SRD_k：平均绝对速率偏差
+        val srd = sumAbsDeviation / count
+        // 线性惩罚映射到 [0, 100]，上限阈值 0.8
+        return ((1.0 - srd / 0.8).coerceAtLeast(0.0)) * 100.0
     }
 
 
@@ -824,7 +870,8 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
             val dtwResult = dtwWithWindow(doctorChunk, patientChunk, windowRatio = 0.3f, errorThreshold = 15f)
 
             // 使用多指标加权评分替换原简单线性评分
-            val segScore = computeSegmentScore(dtwResult)
+            val speedScore = calculateSpeedScore(alignment, doctorStart, doctorEnd)
+            val segScore = computeSegmentScore(dtwResult, speedScore)
 
             // 计算该段医生序列的运动复杂度作为权重
             val complexity = computeComplexity(doctorChunk)
@@ -855,6 +902,7 @@ class AnalysisActivity : AppCompatActivity(), PoseLandmarkerHelper.LandmarkerLis
             Log.d("mmmmm", "  平均偏差:   ${"%.1f".format(dtwResult.avgAngleDiff)}°")
             Log.d("mmmmm", "  最大偏差:   ${"%.1f".format(dtwResult.maxAngleDiff)}°")
             Log.d("mmmmm", "  超${dtwResult.errorThreshold.toInt()}°帧占比: ${"%.1f".format(dtwResult.errorFrameRatio * 100)}%")
+            Log.d("mmmmm", "  速度子分:   ${"%.1f".format(speedScore)}")
             Log.d("mmmmm", "  医生帧范围: $doctorStart ~ $doctorEnd（${doctorEnd - doctorStart}帧）")
             Log.d("mmmmm", "  患者帧范围: $patStart ~ $patEnd（${patEnd - patStart}帧）")
 
